@@ -97,14 +97,23 @@ for fidx=1:size(fpcompilefilenames, 1)
     % inflection point by definition. This requires taking away two
     % indices, one to make event_idx an offset, and one to remove the last
     % point
-    zeroes_preslope = find(inflection_pts(1:midx+event_idx-1-2) == 1);
-    zeroes_postslope = find(inflection_pts(midx+event_idx + 1:end) == 1);
+    zeros_preslope = find(inflection_pts(1:midx+event_idx-2) == 1);
+    zeros_postslope = find(inflection_pts(midx+event_idx + 1:end) == 1);
     
+    
+    % find the inflection point that occurs at at least 25% of the value of the peak
+    spike_end_idx = -1;
+    for post_idx=1:length(zeros_postslope)
+        if mean_cols(zeros_postslope(post_idx) + event_idx + midx - 1) <= max_cols * 0.25
+            spike_end_idx = post_idx;
+            break;
+        end
+    end
     
     % add midx and event_idx to the second inflection point after the spike (as discussed above) to
     % create the true index in time (zeros postslope is timeshifted to the
     % area after the max after the event
-    spike_interval = [ zeroes_preslope(end) zeroes_postslope(2) + event_idx + midx] ;
+    spike_interval = [ zeros_preslope(end) zeros_postslope(spike_end_idx) + event_idx + midx] ;
     spike_interval_time = [ time(spike_interval(1)) time(spike_interval(2)) ];
     
     xline(spike_interval_time(1));
