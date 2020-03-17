@@ -2,6 +2,7 @@ MDIR_DIRECTORY_NAME = FP_ANALYSIS_OUTDIR;
 make_directory
 
 fs = 120; % Sampling frequency of 120
+timescale = [-5 10]; % measurements taken from 5 seconds before spike to 10 seconds after 
 
 % If there's more than one .mat file in this directory, this will read the
 % first one by default so be careful!
@@ -32,11 +33,13 @@ load(fpcompilevarsfilename);
 % TODO: Currently the compiled data is a 15 second chunk of data taken at a
 % sampling frequency of 122Hz. This may change at some point in the future!
 
+
+spikeareas = zeros(length(fpcompilefilenames), 1);
 % Read the sheet specified in modified_pipeline from the compiled variables
 for fidx=1:size(fpcompilefilenames, 1)
     clf('reset');
     compiled_data = xlsread(fpcompilefilenames{fidx, 1}, FP_SHEET_NAME);
-    time = linspace(-15/2, 15/2, size(compiled_data, 1));
+    time = linspace(timescale(1), timescale(2), size(compiled_data, 1));
     
     p = plot(time, compiled_data, 'b');
     
@@ -58,21 +61,66 @@ for fidx=1:size(fpcompilefilenames, 1)
     xlabel([ 'Seconds from/after ' FP_SHEET_NAME ]);
     ylabel('df/f');
     
-    xlim([ -7.5 7.5 ]);
+    xlim([ timescale(1) timescale(2) ]);    
+    
+    %% Take the area under the curve for the spike
+    
+    % We define a 'spike' here as any region of a graph for which the its
+    % slope goes sharply up, down to zero, sharply down, and up to zero again
+    % denoting a region of large increase, decrease, then stabilization
+    
+    % We go about finding it by finding the maximum of the graph after
+    % spike time, looking for the zero slope before and the zero after
+    % that occurs at a value less than 25% of the max in order to account for 
+    % local inflection points that clearly occur during the spike
+    
+    % get inflection points by looking for places where either the slope is
+    % zero or the slope crosses the x axis.
+     % TODO: Find spike time in a more intelligent way?
+    spiketime = 0;
+    event_idx = find( abs( time - spiketime ) <= ( 1/fs ), 1, 'first' ); % find the closest value to spiketime in the interpolated dataset
+    
+    slopemean = diff(mean_cols);
+    inflection_pts = zeros(length(slopemean) - 1, 1);
+    
+    for pt=1:length(slopemean) - 1
+        if ( slopemean(pt) > 0 && slopemean(pt+1) < 0 ) || ( slopemean(pt) < 0 && slopemean(pt+1) > 0 || slopemean(pt) == 0)
+            inflection_pts(pt) = 1;
+        end
+    end
+    
+
+    [ max_cols, midx ] = max(mean_cols(event_idx:end));
+    midx = midx - 1; % adjust mean index to be the number of indices AFTER the event rather than a simple Matlab index 
+    
+    % exclude the max itself from consideration, as it is also an
+    % inflection point by definition. This requires taking away two
+    % indices, one to make event_idx an offset, and one to remove the last
+    % point
+    zeroes_preslope = find(inflection_pts(1:midx+event_idx-1-2) == 1);
+    zeroes_postslope = find(inflection_pts(midx+event_idx + 1:end) == 1);
+    
+    
+    % add midx and event_idx to the second inflection point after the spike (as discussed above) to
+    % create the true index in time (zeros postslope is timeshifted to the
+    % area after the max after the event
+    spike_interval = [ zeroes_preslope(end) zeroes_postslope(2) + event_idx + midx] ;
+    spike_interval_time = [ time(spike_interval(1)) time(spike_interval(2)) ];
+    
+    xline(spike_interval_time(1));
+    xline(spike_interval_time(2));
+    
+    
     outfilename = join([ FP_ANALYSIS_OUTDIR '\' FP_SHEET_NAME ' for ' graphname ], '');
     print(outfilename, '-dpng');
-    
-    % Split trace before and after spike and plot the frequency variations
-    % TODO: Find spike time in a more intelligent way
-    spiketime = -2;
-    spike_idx = find( abs( time - spiketime ) <= ( 1/fs ), 1, 'first' ); % find the closest value to spiketime in the interpolated dataset
-    
+    %% Split trace before and after spike and plot the frequency variations
+   
     % Compute one sided fft of signal before and after spike
     % https://www.mathworks.com/help/matlab/ref/fft.html
     % Size of positive end of fourier transform will be a vector half the
     % length of the spike data array
-    left_spike = compiled_data(1:spike_idx, :);
-    right_spike = compiled_data(spike_idx:end, :);
+    left_spike = compiled_data(1:event_idx, :);
+    right_spike = compiled_data(event_idx:end, :);
      
     length_left = size(left_spike, 1);
     length_right = size(right_spike, 1);
@@ -145,9 +193,9 @@ for fidx=1:size(fpcompilefilenames, 1)
     xlabel('Frequency (Hz)');
     addUnifiedYLabel(p1, p2, 'Amplitude (normalized)');
     
-  
-    
     print(join([ FP_ANALYSIS_OUTDIR '\frequency for ' constructGraphName(splitfpfilename(end)) ], ''), '-dpng');
+    
+   
 end
  
 % Small function to create a standardized graph name from the data's
