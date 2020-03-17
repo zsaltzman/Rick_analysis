@@ -31,10 +31,11 @@ end
 load(fpcompilevarsfilename);
 
 % TODO: Currently the compiled data is a 15 second chunk of data taken at a
-% sampling frequency of 122Hz. This may change at some point in the future!
+% sampling frequency of ~122Hz (though I found 120Hz to be more accurate).
+% This may change at some point in the future!
 
 
-spikeareas = zeros(length(fpcompilefilenames), 1);
+spikeareas = zeros(length(fpcompilefilenames), 2);
 % Read the sheet specified in modified_pipeline from the compiled variables
 for fidx=1:size(fpcompilefilenames, 1)
     clf('reset');
@@ -122,6 +123,26 @@ for fidx=1:size(fpcompilefilenames, 1)
     
     outfilename = join([ FP_ANALYSIS_OUTDIR '\' FP_SHEET_NAME ' for ' graphname ], '');
     print(outfilename, '-dpng');
+    
+    
+    %% Do the volumetric calculation for this graph
+    % Define area as the sum of the rectangles created between the minimum
+    % of the graph and the current value with width equaling the time
+    % between each point in seconds
+    area_base = min(mean_cols);
+    rect_width = 1/fs;
+    total_area = 0; spike_area = 0;
+    for t=1:length(mean_cols)
+        total_area = total_area + ( mean_cols(t) - area_base ) * rect_width;
+    end
+    
+    for t=spike_interval(1):spike_interval(2)
+       spike_area = spike_area + ( mean_cols(t) - area_base ) * rect_width; 
+    end
+    
+    spikeareas(fidx, 1) = total_area;
+    spikeareas(fidx, 2) = spike_area;
+    
     %% Split trace before and after spike and plot the frequency variations
    
     % Compute one sided fft of signal before and after spike
@@ -206,7 +227,34 @@ for fidx=1:size(fpcompilefilenames, 1)
     
    
 end
- 
+
+%% Create the bar graph of comparative areas
+clf('reset');
+area_bar = bar(spikeareas);
+title('Right-bounded area of trace versus area under spike');
+ylabel('Area (df/f \times second)');
+
+% TODO: come up with this more intelligently
+ticklabelarray = { 'C1', 'C2', 'C3', 'C4', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12' }
+xticks(1:length(ticklabelarray));
+xticklabels(ticklabelarray);
+
+% add percentage values from whole above apike area
+% https://www.mathworks.com/help/matlab/ref/bar.html
+xtips = area_bar(2).XEndPoints;
+ytips = area_bar(2).YEndPoints;
+bar_labels = strings(size(spikeareas, 1), 1);
+
+for a=1:size(spikeareas, 1)
+     decimal_val = round(spikeareas(a, 2) / spikeareas(a, 1), 3);
+     decimal_val = decimal_val * 100;
+     
+     bar_labels(a, 1) = strcat( num2str(decimal_val), "%");
+end
+
+text(xtips, ytips, bar_labels, 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom')
+
+%% Helper Functions
 % Small function to create a standardized graph name from the data's
 % underlying filename
 function fid = constructGraphName(filename)
